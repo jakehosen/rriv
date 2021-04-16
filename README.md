@@ -1,7 +1,7 @@
 # waterteam-embedded
 - Install the file COLUMNS.TXT into the root directory of your SD Card, and change field names 5-10 to reflect the sensors attached to analog inputs 0-5 (A0 - A5).
-  - Current columns.txt: duuid,uuid,time.s,time.h,battery.V,sensor.V,data3,data4,data5,data6,conductivity.mS
-  - Deployment uuid, uuid, epoch time in seconds, time in yyyy-mm-dd hh:mm:ss GMT, battery voltage, sensor voltage, n/a, n/a, n/a, n/a, conductivity in microsiemens
+  - Current columns.txt: duuid,uuid,time.s,time.h,battery.V,temperature.V,data3,data4,data5,data6,conductivity.mS,time.TC,C1,V1,C2,V2,M,B,temperature.C,Burst,UserValue,UserNote
+  - Deployment uuid, uuid, epoch time in seconds, time in yyyy-mm-dd hh:mm:ss GMT, battery voltage, thermistor voltage, n/a, n/a, n/a, n/a, conductivity in microsiemens, timestamp temperature calibration, Calibration temp 1, Voltage 1, Calibration temp 2, Voltage 2, Slope(M), Intercept(B), Burst count, User input value, User input note
 
 ### CONNECTING VIA SERIAL/PROGRAMMING:
 1. Use a severed development board to program STM32F103RB via usb:
@@ -18,19 +18,26 @@
 	1. If still stuck, there's a line in setup() called i2c_bus_reset(I2C1); that might help, uncomment, rebuild, reupload and wait for it to run. you won't see any output for a moment or any lights on. I also found that unconnecting the USB along with the power helped. If still stuck and you see a blue light on the Atlas Scientific OEM Development board, you may need to let it sit for a period, with power still plugged in, and then reset again.
 
 ### CURRENT FUNCTIONING SERIAL COMMAND LIST [ >< angle brackets are signifiers for start and end of commands and will need to be incorporated]:
-- `>WT_CONFIG<`							--- outputs readings from conductivity meter on serial
+- `>WT_CONFIG[flag]<`						--- outputs readings on serial based on [flag]=time/conduct/therm
 - `>CAL_DRY<`							--- step 1 of conductivity calibration
 - `>CAL_LOW:12880<`						--- step 2 of conductivity calibration [match to low point fluid]
 - `>CAL_HIGH:80000<`						--- step 3 of conductivity calibration [match to high point fluid]
-- `>WT_DEBUG_VALUES<`						--- outputs the field values 0 - 10 on serial each second
+- `>WT_DEBUG_VALUES<`						--- output values to be logged to sdcard on to serial each second
 - `>WT_SET_RTC:[insert epoch timestamp]<`			--- set the real time clock [https://www.epochconverter.com/]
 - `>WT_DEPLOY:[insert 25 characters exact]<`			--- give a custom name to the device
-- `>WT_CLEAR_MODES<`						--- clears WT_CONFIG and WT_DEPLOY modes, instead of resetting the board to go to normal function
+- `>WT_CLEAR_MODES<`						--- clears WT_CONFIG, WT_DEPLOY, and WT_CAL_TEMP (note: this might be combined with WT_CONFIG)
+- `>WT_CAL_TEMP<`						--- display calibration data and readings (note: this might be combined with WT_CONFIG:therm)
+- `>TEMP_CAL_LOW:[xxx.xxC]<`					--- low point temperature(C) calibration input
+- `>TEMP_CAL_HIGH:[xxx.xxC]<`					--- high point temperature(C) calibration input
+- `>WT_USER_VALUE:[10 character max value]<`				--- user serial input value
+- `>WT_USER_NOTE:[30 character max note]<`				--- user serial input note
+- `>WT_USER_INPUT:[10 character max value]&[30 character max note]<`	--- user serial input value & note
   - Note: I use vscode's serial monitor, and copy paste complete commands into the terminal
+  - Note: WT_DEBUG_VALUES can be used to see all logged data and is useful for any calibrations
 
 ### CALIBRATION OF CONDUCTIVITY PROBE VIA SERIAL:
 Note: You should only see serial output from initial setup steps (if reset/first start)
-1. Use serial command: `>WT_CONFIG<` Which will queue to enter config mode. The serial output should immediately change to conductivity readings.
+1. Use serial command: `>WT_CONFIG:conduct<` Which will queue to enter config mode. The serial output should immediately change to conductivity readings.
 	1. Next we'll be giving commands for a two-point calibration using the recommended Atlas Scientific K1.0 calibration solutions which are Low:12880uS, and High:80000uS, if you are using custom calibration points, change the numerical value in the Low and High commands accordingly.
 	2. These commands are based off of Atlas Scientific's EC_EZO_Datasheet pg 13/74 two point calibration theory for K 1.0
 2. Have the probe in open air and let it stabilize at 0, then use serial command: `>CAL_DRY<`
@@ -41,7 +48,7 @@ Note: You should only see serial output from initial setup steps (if reset/first
 6. Reset to reenter normal operations or use command: `>WT_CLEAR_MODES<`
 
 ### TO CONFIGURE TIME(Real Time Clock - DS3231):
-1. Enter debug values mode via serial command: `>WT_DEBUG_VALUES<` Which will begin to print logged data values 0 - 10
+1. Enter time config mode via serial command: `>WT_CONFIG:time<` Which will begin to print current timestamp in epoch
 2. Enter serial command: `>WT_SET_RTC:[insert epoch time]<`
 	1. example: `>WT_SET_RTC:1605578020<`
 	2. Change should be immediate or after the second output line, human readable time will also change to reflect this.
@@ -49,7 +56,7 @@ Note: You should only see serial output from initial setup steps (if reset/first
 3. (optional) Enter serial command to clear output: `>WT_CLEAR_MODES<`
 
 ### TO SET THE DEPLOYMENT UUID (Universally Unique IDentifier)
-1. Enter debug values mode via serial command: `>WT_DEBUG_VALUES<` Which will begin to print logged data values 0 - 10
+1. Enter debug values mode via serial command: `>WT_DEBUG_VALUES<` Which will begin to print all logged data values
 2. Enter serial command: `>WT_DEPLOY:[25 characters exact]<`
 	1. examples:
 		1. `>WT_DEPLOY:0123456789012345678901234<`
@@ -58,6 +65,20 @@ Note: You should only see serial output from initial setup steps (if reset/first
 		4. `>WT_DEPLOY:__bench_#00_vRefactored__<`
 	2. Change should be noticeable at second output line.
 3. (optional) Enter serial command to clear output: `>WT_CLEAR_MODES<`
+
+### TWO POINT LINEAR CALIBRATION OF THERMISTOR VIA SERIAL:
+1. Boil water for high temperature, and prepare ice water bath for low temperature points.
+2. Enter temperature calibration mode via serial command: `>WT_CONFIG:therm<` Which will begin to print out any relevant stored calibration info as well as raw voltage readings
+3. Place thermistor and calibration thermometer(C) in ice bath, wait for 30-60s to equalize, then use serial command: `>TEMP_CAL_LOW:[xxx.xxC]<` with temperature reading off of thermometer. You should see confirmation via serial that command has been read.
+4. Move thermistor and calibration thermometer(C) to hot water, wait for 30-60s to equalize, then use serial command `>TEMP_CAL_HIGH:[xxx.xxC]<` with temperature reading off of thermometer. You should see confirmation via serial, and there should now be calibrated output.
+5. Reset to reenter normal operations or use command: `>WT_CLEAR_MODES<`
+Note: If at any point voltage reading show as 0, that indicates an error, check connection of thermistor to Waterbear shield
+
+### USER INPUT VALUES AND NOTES VIA SERIAL:
+1. When you're in a config/debug mode you may wish to log what you're doing directly to the sdcard for future reference
+2. To log a value up to 10 characters long use `>WT_USER_VALUE:[10 character max value]<`
+3. To log a note up to 30 characters long use `>WT_USER_NOTE:[30 character max note]<`
+4. To log both a value and note use `>WT_USER_INPUT:[10 character max value]&[30 character max note]<`
 
 ### NOTES:
 - Check version of Maple is at least: framework-arduinoststm32-maple 2.10000.200103 (1.0.0)
